@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "routes": [
+    {
+      "src": "/",
+      "dest": "/Quotex Low loader.js",
+      "headers": {
+        "Cache-Control": "no-cache"
+      }
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/Quotex Low loader.js"
+    }
+  ]
+}
