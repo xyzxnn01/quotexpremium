@@ -23,6 +23,24 @@
             </div>
         </header>
 
+        <!-- Quotex Connection Bar -->
+        <div class="qx-bar" id="qxBar">
+            <div class="qx-bar-left">
+                <span class="qx-dot" id="qxDot"></span>
+                <span class="qx-status-text" id="qxStatusText">Connect to Quotex for live OTC data</span>
+            </div>
+            <div class="qx-bar-right">
+                <span class="qx-info" id="qxInfo" style="display:none;">
+                    <span id="qxTickCount">Ticks: 0</span>
+                    <span id="qxCandleCount">Candles: 0</span>
+                    <span id="qxLivePrice">Price: —</span>
+                </span>
+                <button class="btn btn-quotex" id="quotexLoginBtn">🔑 Login to Quotex</button>
+                <button class="btn btn-connect" id="quotexConnectBtn" style="display:none;">⚡ Connect Live</button>
+                <button class="btn btn-disconnect" id="quotexDisconnectBtn" style="display:none;">✕ Disconnect</button>
+            </div>
+        </div>
+
         <!-- Market Type Tabs -->
         <div class="market-tabs">
             <button class="tab-btn active" data-filter="all">All Markets</button>
@@ -95,6 +113,7 @@
         </div>
     </div>
 
+    <script src="/static/quotex-bridge.js"></script>
     <script src="/static/app.js"></script>
 </body>
 </html>

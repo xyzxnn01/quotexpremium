@@ -8,9 +8,11 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+
+import pandas as pd
 
 from app.analyzer import analyze
 from app.config import QUOTEX_INSTRUMENTS, YF_SYMBOLS
@@ -183,6 +185,38 @@ async def api_scan():
             data["payout"] = inst.get("payout", 0)
             results.append(data)
     return results
+
+
+@app.post("/api/analyze_candles")
+async def api_analyze_candles(request: Request):
+    """Analyze candle data sent from the browser-side Quotex bridge."""
+    body = await request.json()
+    candles = body.get("candles", [])
+    asset = body.get("asset", "")
+    timeframe = body.get("timeframe", "5m")
+
+    if not candles or len(candles) < 30:
+        return {"error": "Need at least 30 candles for analysis"}
+
+    df = pd.DataFrame(candles)
+    required = {"open", "high", "low", "close", "time"}
+    if not required.issubset(set(df.columns)):
+        return {"error": "Candles must have time, open, high, low, close fields"}
+
+    df = df.rename(columns={"open": "Open", "high": "High", "low": "Low", "close": "Close"})
+    df["Volume"] = df.get("ticks", 0)
+    df.index = pd.to_datetime(df["time"], unit="s", utc=True)
+
+    inst = QUOTEX_INSTRUMENTS.get(asset, {})
+    display_name = inst.get("name", asset)
+    result = analyze(df, display_name, timeframe)
+    if result is None:
+        return {"error": "Insufficient data for analysis"}
+
+    data = result.to_dict()
+    data["symbol"] = asset
+    data["payout"] = inst.get("payout", 0)
+    return data
 
 
 @app.websocket("/ws")

@@ -413,31 +413,236 @@ function setupMarketTabs() {
     });
 }
 
+/* ===== Quotex Bridge Integration ===== */
+let qxTickCount = 0;
+let qxLiveMode = false;
+let qxSessionToken = null;
+
+function setupQuotexBridge() {
+    const bridge = window.qxBridge;
+    if (!bridge) return;
+
+    bridge.onStatusChange = (status, msg) => {
+        const dot = document.getElementById('qxDot');
+        const text = document.getElementById('qxStatusText');
+        const modeEl = document.getElementById('dataMode');
+        const connectBtn = document.getElementById('quotexConnectBtn');
+        const disconnectBtn = document.getElementById('quotexDisconnectBtn');
+        const infoEl = document.getElementById('qxInfo');
+
+        text.textContent = msg;
+
+        if (status === 'connected') {
+            dot.className = 'qx-dot connected';
+            modeEl.textContent = '🔴 QUOTEX LIVE';
+            modeEl.className = 'mode-badge mode-live';
+            connectBtn.style.display = 'none';
+            disconnectBtn.style.display = '';
+            infoEl.style.display = '';
+            document.getElementById('quotexLoginBtn').style.display = 'none';
+            qxLiveMode = true;
+        } else if (status === 'connecting') {
+            dot.className = 'qx-dot connecting';
+            text.textContent = 'Connecting to Quotex...';
+        } else if (status === 'error') {
+            dot.className = 'qx-dot error';
+        } else {
+            dot.className = 'qx-dot';
+            modeEl.textContent = '📊 yFinance';
+            modeEl.className = 'mode-badge mode-fallback';
+            connectBtn.style.display = '';
+            disconnectBtn.style.display = 'none';
+            infoEl.style.display = 'none';
+            document.getElementById('quotexLoginBtn').style.display = '';
+            qxLiveMode = false;
+        }
+    };
+
+    bridge.onConnect = () => {
+        // Subscribe to current asset
+        bridge.subscribeAsset(currentAsset);
+    };
+
+    bridge.onTick = (tick) => {
+        qxTickCount++;
+        document.getElementById('qxTickCount').textContent = `Ticks: ${qxTickCount}`;
+
+        if (tick.asset === currentAsset) {
+            const priceEl = document.getElementById('qxLivePrice');
+            priceEl.textContent = `Price: ${formatPrice(tick.price)}`;
+            updatePrice(tick.price, tick.direction === 1);
+
+            // Update chart with latest candle
+            const candle = bridge.currentCandle[tick.asset];
+            if (candle) {
+                candleSeries.update({
+                    time: candle.time,
+                    open: candle.open,
+                    high: candle.high,
+                    low: candle.low,
+                    close: candle.close,
+                });
+            }
+        }
+    };
+
+    bridge.onCandle = (asset, candle) => {
+        const count = (bridge.candles1m[asset] || []).length;
+        document.getElementById('qxCandleCount').textContent = `Candles: ${count}`;
+    };
+
+    bridge.onHistory = (asset, candles) => {
+        if (asset === currentAsset) {
+            loadQxChart(asset, currentTimeframe);
+        }
+    };
+}
+
+function loadQxChart(asset, timeframe) {
+    const bridge = window.qxBridge;
+    if (!bridge) return;
+
+    const candles = bridge.getCandles(asset, timeframe);
+    if (!candles || candles.length === 0) return;
+
+    candleSeries.setData(candles.map(c => ({
+        time: c.time, open: c.open, high: c.high, low: c.low, close: c.close,
+    })));
+
+    volumeSeries.setData(candles.map(c => ({
+        time: c.time, value: c.ticks || 0,
+        color: c.close >= c.open ? 'rgba(38,166,154,0.3)' : 'rgba(239,83,80,0.3)',
+    })));
+
+    const last = candles[candles.length - 1];
+    updatePrice(last.close, last.close >= last.open);
+    chart.timeScale().fitContent();
+}
+
+async function runQxAnalysis() {
+    const bridge = window.qxBridge;
+    if (!bridge) return;
+
+    const candles = bridge.getCandles(currentAsset, currentTimeframe);
+    if (!candles || candles.length < 30) {
+        document.getElementById('signalContent').innerHTML =
+            '<div class="placeholder">Not enough Quotex data yet. Wait for more ticks...</div>';
+        return;
+    }
+
+    const panel = document.getElementById('signalContent');
+    panel.innerHTML = '<div class="loading"><div class="spinner"></div>Analyzing live data...</div>';
+
+    try {
+        const res = await fetch(`${API_BASE}/api/analyze_candles`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                candles: candles,
+                asset: currentAsset,
+                timeframe: currentTimeframe,
+            }),
+        });
+        const data = await res.json();
+        if (data.error) {
+            panel.innerHTML = `<div class="placeholder">${data.error}</div>`;
+            return;
+        }
+        renderAnalysis(data);
+    } catch (e) {
+        panel.innerHTML = '<div class="placeholder">Analysis failed.</div>';
+    }
+}
+
+function quotexLogin() {
+    const popup = window.open(
+        'https://market-qx.trade/en/sign-in',
+        'quotex_login',
+        'width=500,height=700,scrollbars=yes,resizable=yes'
+    );
+
+    // Show connect button after login popup opens
+    document.getElementById('quotexConnectBtn').style.display = '';
+
+    // Check if popup closed (user finished login)
+    const checker = setInterval(() => {
+        if (popup && popup.closed) {
+            clearInterval(checker);
+        }
+    }, 1000);
+}
+
+function quotexConnect() {
+    const token = prompt(
+        'Enter your Quotex session token.\n\n' +
+        'How to get it:\n' +
+        '1. Login to Quotex in the popup\n' +
+        '2. Open DevTools (F12) → Network tab\n' +
+        '3. Filter for "socket.io"\n' +
+        '4. Look for authorization message with "session" value\n\n' +
+        'Or paste the token from your HAR file:'
+    );
+    if (!token) return;
+
+    qxSessionToken = token.trim();
+    const bridge = window.qxBridge;
+    bridge.connect(qxSessionToken);
+}
+
+function quotexDisconnect() {
+    const bridge = window.qxBridge;
+    if (bridge) bridge.disconnect();
+    qxLiveMode = false;
+    qxTickCount = 0;
+}
+
 /* ===== Event Listeners ===== */
 function setupEventListeners() {
     document.getElementById('assetSelect').addEventListener('change', (e) => {
         currentAsset = e.target.value;
-        loadChart(currentAsset, currentTimeframe);
+        if (qxLiveMode) {
+            window.qxBridge.subscribeAsset(currentAsset);
+            loadQxChart(currentAsset, currentTimeframe);
+        } else {
+            loadChart(currentAsset, currentTimeframe);
+        }
     });
 
     document.getElementById('timeframeSelect').addEventListener('change', (e) => {
         currentTimeframe = e.target.value;
-        loadChart(currentAsset, currentTimeframe);
+        if (qxLiveMode) {
+            loadQxChart(currentAsset, currentTimeframe);
+        } else {
+            loadChart(currentAsset, currentTimeframe);
+        }
     });
 
     document.getElementById('analyzeBtn').addEventListener('click', () => {
-        runAnalysis();
+        if (qxLiveMode) {
+            runQxAnalysis();
+        } else {
+            runAnalysis();
+        }
     });
 
     document.getElementById('scanBtn').addEventListener('click', () => {
         runScan();
     });
 
+    // Quotex buttons
+    document.getElementById('quotexLoginBtn').addEventListener('click', quotexLogin);
+    document.getElementById('quotexConnectBtn').addEventListener('click', quotexConnect);
+    document.getElementById('quotexDisconnectBtn').addEventListener('click', quotexDisconnect);
+
     setupMarketTabs();
+    setupQuotexBridge();
 }
 
 /* ===== Clock ===== */
 function updateClock() {
     const now = new Date();
-    document.getElementById('clock').textContent = now.toUTCString().slice(0, -4) + ' UTC';
+    const h = String(now.getUTCHours()).padStart(2, '0');
+    const m = String(now.getUTCMinutes()).padStart(2, '0');
+    const s = String(now.getUTCSeconds()).padStart(2, '0');
+    document.getElementById('clock').textContent = `${h}:${m}:${s} UTC`;
 }
