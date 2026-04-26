@@ -5,11 +5,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import secrets
+import time
 from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 import pandas as pd
@@ -26,6 +29,9 @@ signal_history: list[dict[str, Any]] = []
 MAX_HISTORY = 100
 
 active_connections: list[WebSocket] = []
+
+# Token relay storage: {connect_id: {"token": str, "ts": float}}
+_token_store: dict[str, dict[str, Any]] = {}
 
 
 async def broadcast(message: dict[str, Any]) -> None:
@@ -114,6 +120,15 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Quotex Signal Bot", version="2.0.0", lifespan=lifespan)
+
+# Allow CORS from Quotex domain so the console command can send the token
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://market-qx.trade", "https://quotex.io", "*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
+
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 
@@ -217,6 +232,44 @@ async def api_analyze_candles(request: Request):
     data["symbol"] = asset
     data["payout"] = inst.get("payout", 0)
     return data
+
+
+@app.get("/api/connect-id")
+async def api_connect_id():
+    """Generate a unique connect ID for the token relay."""
+    connect_id = secrets.token_urlsafe(16)
+    _token_store[connect_id] = {"token": None, "ts": time.time()}
+    # Clean old entries (>10 min)
+    cutoff = time.time() - 600
+    stale = [k for k, v in _token_store.items() if v["ts"] < cutoff]
+    for k in stale:
+        del _token_store[k]
+    return {"connect_id": connect_id}
+
+
+@app.get("/api/set-token")
+async def api_set_token(connect_id: str = "", token: str = ""):
+    """Receive token from Quotex console command (GET for simplicity)."""
+    if not connect_id or not token:
+        return JSONResponse({"error": "Missing connect_id or token"}, status_code=400)
+    if connect_id in _token_store:
+        _token_store[connect_id]["token"] = token
+        _token_store[connect_id]["ts"] = time.time()
+        logger.info("Token received for connect_id %s", connect_id[:8])
+        return {"ok": True, "message": "Token received! Go back to Signal Bot — it will auto-connect."}
+    return JSONResponse({"error": "Invalid connect_id"}, status_code=404)
+
+
+@app.get("/api/get-token")
+async def api_get_token(connect_id: str = ""):
+    """Poll for token (called by frontend)."""
+    if not connect_id or connect_id not in _token_store:
+        return {"token": None}
+    entry = _token_store[connect_id]
+    token = entry.get("token")
+    if token:
+        del _token_store[connect_id]
+    return {"token": token}
 
 
 @app.websocket("/ws")

