@@ -1,20 +1,44 @@
 """Configuration for the Quotex Signal Bot."""
 
 ASSETS = {
-    "EUR/USD": {"yf_symbol": "EURUSD=X", "category": "Forex"},
-    "GBP/USD": {"yf_symbol": "GBPUSD=X", "category": "Forex"},
-    "USD/JPY": {"yf_symbol": "JPY=X", "category": "Forex"},
-    "AUD/USD": {"yf_symbol": "AUDUSD=X", "category": "Forex"},
-    "EUR/GBP": {"yf_symbol": "EURGBP=X", "category": "Forex"},
-    "USD/CAD": {"yf_symbol": "CAD=X", "category": "Forex"},
-    "NZD/USD": {"yf_symbol": "NZDUSD=X", "category": "Forex"},
-    "EUR/JPY": {"yf_symbol": "EURJPY=X", "category": "Forex"},
-    "GBP/JPY": {"yf_symbol": "GBPJPY=X", "category": "Forex"},
-    "CHF/JPY": {"yf_symbol": "CHFJPY=X", "category": "Forex"},
-    "BTC/USD": {"yf_symbol": "BTC-USD", "category": "Crypto"},
-    "ETH/USD": {"yf_symbol": "ETH-USD", "category": "Crypto"},
-    "Gold": {"yf_symbol": "GC=F", "category": "Commodity"},
-    "Silver": {"yf_symbol": "SI=F", "category": "Commodity"},
+    # ─── Forex ───
+    "EUR/USD": {"yf_symbol": "EURUSD=X", "category": "Forex", "is_otc": False},
+    "GBP/USD": {"yf_symbol": "GBPUSD=X", "category": "Forex", "is_otc": False},
+    "USD/JPY": {"yf_symbol": "JPY=X", "category": "Forex", "is_otc": False},
+    "AUD/USD": {"yf_symbol": "AUDUSD=X", "category": "Forex", "is_otc": False},
+    "EUR/GBP": {"yf_symbol": "EURGBP=X", "category": "Forex", "is_otc": False},
+    "USD/CAD": {"yf_symbol": "CAD=X", "category": "Forex", "is_otc": False},
+    "NZD/USD": {"yf_symbol": "NZDUSD=X", "category": "Forex", "is_otc": False},
+    "EUR/JPY": {"yf_symbol": "EURJPY=X", "category": "Forex", "is_otc": False},
+    "GBP/JPY": {"yf_symbol": "GBPJPY=X", "category": "Forex", "is_otc": False},
+    "CHF/JPY": {"yf_symbol": "CHFJPY=X", "category": "Forex", "is_otc": False},
+    "USD/CHF": {"yf_symbol": "CHF=X", "category": "Forex", "is_otc": False},
+    "AUD/CAD": {"yf_symbol": "AUDCAD=X", "category": "Forex", "is_otc": False},
+    # ─── Forex OTC ───
+    "EUR/USD (OTC)": {"yf_symbol": "EURUSD=X", "category": "Forex OTC", "is_otc": True, "base_asset": "EUR/USD"},
+    "GBP/USD (OTC)": {"yf_symbol": "GBPUSD=X", "category": "Forex OTC", "is_otc": True, "base_asset": "GBP/USD"},
+    "USD/JPY (OTC)": {"yf_symbol": "JPY=X", "category": "Forex OTC", "is_otc": True, "base_asset": "USD/JPY"},
+    "AUD/USD (OTC)": {"yf_symbol": "AUDUSD=X", "category": "Forex OTC", "is_otc": True, "base_asset": "AUD/USD"},
+    "EUR/GBP (OTC)": {"yf_symbol": "EURGBP=X", "category": "Forex OTC", "is_otc": True, "base_asset": "EUR/GBP"},
+    "USD/CAD (OTC)": {"yf_symbol": "CAD=X", "category": "Forex OTC", "is_otc": True, "base_asset": "USD/CAD"},
+    "NZD/USD (OTC)": {"yf_symbol": "NZDUSD=X", "category": "Forex OTC", "is_otc": True, "base_asset": "NZD/USD"},
+    "EUR/JPY (OTC)": {"yf_symbol": "EURJPY=X", "category": "Forex OTC", "is_otc": True, "base_asset": "EUR/JPY"},
+    "GBP/JPY (OTC)": {"yf_symbol": "GBPJPY=X", "category": "Forex OTC", "is_otc": True, "base_asset": "GBP/JPY"},
+    "CHF/JPY (OTC)": {"yf_symbol": "CHFJPY=X", "category": "Forex OTC", "is_otc": True, "base_asset": "CHF/JPY"},
+    "USD/CHF (OTC)": {"yf_symbol": "CHF=X", "category": "Forex OTC", "is_otc": True, "base_asset": "USD/CHF"},
+    "AUD/CAD (OTC)": {"yf_symbol": "AUDCAD=X", "category": "Forex OTC", "is_otc": True, "base_asset": "AUD/CAD"},
+    # ─── Crypto ───
+    "BTC/USD": {"yf_symbol": "BTC-USD", "category": "Crypto", "is_otc": False},
+    "ETH/USD": {"yf_symbol": "ETH-USD", "category": "Crypto", "is_otc": False},
+    # ─── Crypto OTC ───
+    "BTC/USD (OTC)": {"yf_symbol": "BTC-USD", "category": "Crypto OTC", "is_otc": True, "base_asset": "BTC/USD"},
+    "ETH/USD (OTC)": {"yf_symbol": "ETH-USD", "category": "Crypto OTC", "is_otc": True, "base_asset": "ETH/USD"},
+    # ─── Commodity ───
+    "Gold": {"yf_symbol": "GC=F", "category": "Commodity", "is_otc": False},
+    "Silver": {"yf_symbol": "SI=F", "category": "Commodity", "is_otc": False},
+    # ─── Commodity OTC ───
+    "Gold (OTC)": {"yf_symbol": "GC=F", "category": "Commodity OTC", "is_otc": True, "base_asset": "Gold"},
+    "Silver (OTC)": {"yf_symbol": "SI=F", "category": "Commodity OTC", "is_otc": True, "base_asset": "Silver"},
 }
 
 TIMEFRAMES = {

@@ -78,9 +78,13 @@ def get_chart_data(asset: str, timeframe: str) -> list[dict[str, Any]]:
     return records
 
 
-def get_asset_list() -> list[dict[str, str]]:
+def get_asset_list() -> list[dict[str, Any]]:
     """Return available assets grouped by category."""
     return [
-        {"name": name, "category": info["category"]}
+        {
+            "name": name,
+            "category": info["category"],
+            "is_otc": info.get("is_otc", False),
+        }
         for name, info in ASSETS.items()
     ]

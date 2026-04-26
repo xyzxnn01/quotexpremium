@@ -5,6 +5,8 @@ let chart, candleSeries, volumeSeries;
 let ws = null;
 let currentAsset = 'EUR/USD';
 let currentTimeframe = '5m';
+let allAssets = [];
+let currentFilter = 'all';
 
 /* ===== Initialization ===== */
 document.addEventListener('DOMContentLoaded', () => {
@@ -14,7 +16,6 @@ document.addEventListener('DOMContentLoaded', () => {
     connectWebSocket();
     updateClock();
     setInterval(updateClock, 1000);
-    // Auto-refresh chart every 60 seconds
     setInterval(() => loadChart(currentAsset, currentTimeframe), 60000);
 });
 
@@ -75,34 +76,63 @@ function initChart() {
 async function loadAssets() {
     try {
         const res = await fetch(`${API_BASE}/api/assets`);
-        const assets = await res.json();
-        const select = document.getElementById('assetSelect');
-        let currentCategory = '';
-        let optgroup = null;
-        assets.forEach(a => {
-            if (a.category !== currentCategory) {
-                currentCategory = a.category;
-                optgroup = document.createElement('optgroup');
-                optgroup.label = a.category;
-                select.appendChild(optgroup);
-            }
-            const opt = document.createElement('option');
-            opt.value = a.name;
-            opt.textContent = a.name;
-            if (a.name === currentAsset) opt.selected = true;
-            optgroup.appendChild(opt);
-        });
+        allAssets = await res.json();
+        populateAssetSelect(allAssets);
         loadChart(currentAsset, currentTimeframe);
     } catch (e) {
         console.error('Failed to load assets:', e);
     }
 }
 
+function populateAssetSelect(assets) {
+    const select = document.getElementById('assetSelect');
+    select.innerHTML = '';
+    let currentCategory = '';
+    let optgroup = null;
+
+    const filtered = filterAssets(assets, currentFilter);
+
+    filtered.forEach(a => {
+        if (a.category !== currentCategory) {
+            currentCategory = a.category;
+            optgroup = document.createElement('optgroup');
+            optgroup.label = a.category + (a.category.includes('OTC') ? ' 🌙' : '');
+            select.appendChild(optgroup);
+        }
+        const opt = document.createElement('option');
+        opt.value = a.name;
+        opt.textContent = a.name;
+        if (a.name === currentAsset) opt.selected = true;
+        optgroup.appendChild(opt);
+    });
+
+    // If current asset not in filtered list, select first
+    if (filtered.length > 0 && !filtered.find(a => a.name === currentAsset)) {
+        currentAsset = filtered[0].name;
+        select.value = currentAsset;
+        loadChart(currentAsset, currentTimeframe);
+    }
+}
+
+function filterAssets(assets, filter) {
+    if (filter === 'all') return assets;
+    if (filter === 'otc') return assets.filter(a => a.is_otc);
+    if (filter === 'regular') return assets.filter(a => !a.is_otc);
+    return assets.filter(a => a.category === filter);
+}
+
 /* ===== Chart Data ===== */
 async function loadChart(asset, timeframe) {
     currentAsset = asset;
     currentTimeframe = timeframe;
-    document.getElementById('chartTitle').textContent = `${asset} — ${timeframe}`;
+
+    const isOtc = asset.includes('(OTC)');
+    const titleEl = document.getElementById('chartTitle');
+    if (isOtc) {
+        titleEl.innerHTML = `${asset} — ${timeframe} <span class="chart-otc-badge">OTC</span>`;
+    } else {
+        titleEl.textContent = `${asset} — ${timeframe}`;
+    }
 
     try {
         const res = await fetch(`${API_BASE}/api/chart/${encodeURIComponent(asset)}/${timeframe}`);
@@ -167,8 +197,19 @@ async function runAnalysis() {
 function renderAnalysis(data) {
     const panel = document.getElementById('signalContent');
     const sigKey = data.overall_signal.replace(/\s+/g, '_');
+    const isOtc = data.asset.includes('(OTC)');
+
+    let otcNote = '';
+    if (isOtc) {
+        otcNote = `
+            <div style="background:rgba(171,71,188,0.1);border:1px solid rgba(171,71,188,0.3);border-radius:6px;padding:8px 12px;margin-bottom:12px;font-size:0.75rem;color:#ab47bc;">
+                🌙 <strong>OTC Market</strong> — Analysis based on base pair data. OTC prices may vary slightly from regular market.
+            </div>
+        `;
+    }
 
     let html = `
+        ${otcNote}
         <div class="overall-signal signal-bg-${sigKey}">
             <div class="signal-type signal-color-${sigKey}">${data.overall_signal}</div>
             <div class="signal-strength">Signal Strength: ${data.signal_strength}%</div>
@@ -220,16 +261,37 @@ function renderScanner(results) {
         return;
     }
 
+    // Apply current filter to scanner results
+    let filtered = results;
+    if (currentFilter === 'otc') {
+        filtered = results.filter(r => r.asset.includes('(OTC)'));
+    } else if (currentFilter === 'regular') {
+        filtered = results.filter(r => !r.asset.includes('(OTC)'));
+    } else if (currentFilter !== 'all') {
+        filtered = results.filter(r => {
+            const assetInfo = allAssets.find(a => a.name === r.asset);
+            return assetInfo && assetInfo.category === currentFilter;
+        });
+    }
+
     // Sort: strongest signals first
-    results.sort((a, b) => b.signal_strength - a.signal_strength);
+    filtered.sort((a, b) => b.signal_strength - a.signal_strength);
+
+    if (filtered.length === 0) {
+        container.innerHTML = '<div class="placeholder">No results for this filter</div>';
+        return;
+    }
 
     let html = '';
-    results.forEach(r => {
+    filtered.forEach(r => {
         const sigKey = r.overall_signal.replace(/\s+/g, '_');
         const barColor = getSignalColor(sigKey);
+        const isOtc = r.asset.includes('(OTC)');
+        const otcClass = isOtc ? 'otc-card' : '';
+        const otcBadge = isOtc ? '<span class="otc-badge">OTC</span>' : '';
         html += `
-            <div class="scanner-card" onclick="selectAsset('${r.asset}')">
-                <div class="asset-name">${r.asset}</div>
+            <div class="scanner-card ${otcClass}" onclick="selectAsset('${r.asset}')">
+                <div class="asset-name">${r.asset}${otcBadge}</div>
                 <div class="asset-price">${formatPrice(r.current_price)}</div>
                 <div class="asset-signal signal-color-${sigKey}">${r.overall_signal}</div>
                 <div class="asset-strength">
@@ -277,8 +339,6 @@ function connectWebSocket() {
             const msg = JSON.parse(event.data);
             if (msg.type === 'signals_update') {
                 handleSignalsUpdate(msg.data);
-            } else if (msg.type === 'chart_data') {
-                // Handle real-time chart updates if needed
             }
         } catch (e) {
             console.error('WS message error:', e);
@@ -289,7 +349,6 @@ function connectWebSocket() {
         const badge = document.getElementById('statusBadge');
         badge.textContent = '● DISCONNECTED';
         badge.classList.remove('connected');
-        // Reconnect after 5 seconds
         setTimeout(connectWebSocket, 5000);
     };
 
@@ -299,11 +358,22 @@ function connectWebSocket() {
 }
 
 function handleSignalsUpdate(signals) {
-    // If current asset has a signal update, refresh the analysis panel
     const match = signals.find(s => s.asset === currentAsset && s.timeframe === currentTimeframe);
     if (match) {
         renderAnalysis(match);
     }
+}
+
+/* ===== Market Tab Filtering ===== */
+function setupMarketTabs() {
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentFilter = btn.dataset.filter;
+            populateAssetSelect(allAssets);
+        });
+    });
 }
 
 /* ===== Event Listeners ===== */
@@ -325,6 +395,8 @@ function setupEventListeners() {
     document.getElementById('scanBtn').addEventListener('click', () => {
         runScan();
     });
+
+    setupMarketTabs();
 }
 
 /* ===== Clock ===== */

@@ -56,6 +56,30 @@ body {
 .live-badge.connected { background: rgba(38,166,154,0.15); color: var(--green); }
 .clock { color: var(--text-secondary); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
 
+/* ===== Market Tabs ===== */
+.market-tabs {
+    display: flex;
+    gap: 6px;
+    padding: 10px 0 4px;
+    flex-wrap: wrap;
+}
+.tab-btn {
+    padding: 5px 14px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.tab-btn:hover { border-color: var(--accent); color: var(--text-primary); }
+.tab-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tab-btn.tab-otc { border-color: var(--purple); }
+.tab-btn.tab-otc:hover { background: rgba(171,71,188,0.15); color: var(--purple); }
+.tab-btn.tab-otc.active { background: var(--purple); border-color: var(--purple); color: #fff; }
+
 /* ===== Controls ===== */
 .controls {
     display: flex;
@@ -195,6 +219,30 @@ body {
     overflow: hidden;
 }
 .scanner-card .asset-strength .bar { height: 100%; border-radius: 2px; transition: width 0.5s; }
+.scanner-card.otc-card { border-left: 3px solid var(--purple); }
+.otc-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: rgba(171,71,188,0.2);
+    color: var(--purple);
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+.chart-otc-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(171,71,188,0.2);
+    color: var(--purple);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    margin-left: 8px;
+}
 
 /* ===== Bottom Section ===== */
 .bottom-section { margin-bottom: 20px; }
