@@ -13,8 +13,9 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.analyzer import analyze
-from app.config import ASSETS
+from app.config import QUOTEX_INSTRUMENTS, YF_SYMBOLS
 from app.data import fetch_ohlcv, get_asset_list, get_chart_data
+from app.quotex_ws import init_quotex_client, get_quotex_client
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -39,20 +40,40 @@ async def broadcast(message: dict[str, Any]) -> None:
             active_connections.remove(ws)
 
 
+def _scannable_assets() -> list[str]:
+    """Get assets that have yfinance fallback or Quotex WS data."""
+    qx = get_quotex_client()
+    if qx and qx.connected:
+        # When connected to Quotex, scan subscribed assets with data
+        return [s for s in qx.subscribed_assets if s in qx.current_prices]
+
+    # Fallback: only assets with yfinance symbols
+    result = []
+    for sym in QUOTEX_INSTRUMENTS:
+        base = sym.replace("_otc", "")
+        if sym in YF_SYMBOLS or base in YF_SYMBOLS:
+            result.append(sym)
+    return result
+
+
 async def signal_loop() -> None:
     """Periodically compute signals for all assets and broadcast them."""
     while True:
         try:
             all_signals: list[dict[str, Any]] = []
-            for asset in ASSETS:
+            assets = _scannable_assets()
+            for asset in assets:
                 for tf in ["5m", "15m"]:
                     df = fetch_ohlcv(asset, tf)
                     if df is None:
                         continue
-                    result = analyze(df, asset, tf)
+                    inst = QUOTEX_INSTRUMENTS.get(asset, {})
+                    display_name = inst.get("name", asset)
+                    result = analyze(df, display_name, tf)
                     if result is None:
                         continue
                     sig_dict = result.to_dict()
+                    sig_dict["symbol"] = asset
                     all_signals.append(sig_dict)
                     signal_history.insert(0, sig_dict)
 
@@ -70,6 +91,13 @@ async def signal_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Try to connect to Quotex WebSocket
+    qx = await init_quotex_client()
+    if qx:
+        logger.info("Connected to Quotex WebSocket with %d instruments", len(qx.instruments))
+    else:
+        logger.info("Running in yfinance fallback mode (no Quotex session token)")
+
     task = asyncio.create_task(signal_loop())
     yield
     task.cancel()
@@ -77,9 +105,13 @@ async def lifespan(app: FastAPI):
         await task
     except asyncio.CancelledError:
         pass
+    # Disconnect Quotex WS
+    qx_client = get_quotex_client()
+    if qx_client:
+        await qx_client.disconnect()
 
 
-app = FastAPI(title="Quotex Signal Bot", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Quotex Signal Bot", version="2.0.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 
@@ -94,6 +126,18 @@ async def api_assets():
     return get_asset_list()
 
 
+@app.get("/api/status")
+async def api_status():
+    """Return connection status."""
+    qx = get_quotex_client()
+    return {
+        "quotex_connected": bool(qx and qx.connected),
+        "instruments_count": len(qx.instruments) if qx else len(QUOTEX_INSTRUMENTS),
+        "live_prices": len(qx.current_prices) if qx else 0,
+        "mode": "quotex_live" if (qx and qx.connected) else "yfinance_fallback",
+    }
+
+
 @app.get("/api/chart/{asset:path}/{timeframe}")
 async def api_chart(asset: str, timeframe: str):
     data = get_chart_data(asset, timeframe)
@@ -105,10 +149,15 @@ async def api_analyze(asset: str, timeframe: str):
     df = fetch_ohlcv(asset, timeframe)
     if df is None:
         return {"error": "No data available for this asset/timeframe"}
-    result = analyze(df, asset, timeframe)
+    inst = QUOTEX_INSTRUMENTS.get(asset, {})
+    display_name = inst.get("name", asset)
+    result = analyze(df, display_name, timeframe)
     if result is None:
         return {"error": "Insufficient data for analysis"}
-    return result.to_dict()
+    data = result.to_dict()
+    data["symbol"] = asset
+    data["payout"] = inst.get("payout", 0)
+    return data
 
 
 @app.get("/api/signals/history")
@@ -118,15 +167,21 @@ async def api_signal_history():
 
 @app.get("/api/scan")
 async def api_scan():
-    """Scan all assets on a given timeframe and return signals."""
+    """Scan all assets on 5m timeframe and return signals."""
     results: list[dict[str, Any]] = []
-    for asset in ASSETS:
+    assets = _scannable_assets()
+    for asset in assets:
         df = fetch_ohlcv(asset, "5m")
         if df is None:
             continue
-        result = analyze(df, asset, "5m")
+        inst = QUOTEX_INSTRUMENTS.get(asset, {})
+        display_name = inst.get("name", asset)
+        result = analyze(df, display_name, "5m")
         if result is not None:
-            results.append(result.to_dict())
+            data = result.to_dict()
+            data["symbol"] = asset
+            data["payout"] = inst.get("payout", 0)
+            results.append(data)
     return results
 
 
@@ -143,14 +198,14 @@ async def websocket_endpoint(ws: WebSocket):
             except json.JSONDecodeError:
                 continue
             if msg.get("type") == "get_chart":
-                asset = msg.get("asset", "EUR/USD")
+                asset = msg.get("asset", "EURUSD")
                 timeframe = msg.get("timeframe", "5m")
                 chart_data = get_chart_data(asset, timeframe)
                 await ws.send_text(
                     json.dumps({"type": "chart_data", "asset": asset, "timeframe": timeframe, "data": chart_data})
                 )
             elif msg.get("type") == "get_analysis":
-                asset = msg.get("asset", "EUR/USD")
+                asset = msg.get("asset", "EURUSD")
                 timeframe = msg.get("timeframe", "5m")
                 df = fetch_ohlcv(asset, timeframe)
                 if df is not None:

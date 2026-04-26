@@ -3,21 +3,38 @@
 const API_BASE = '';
 let chart, candleSeries, volumeSeries;
 let ws = null;
-let currentAsset = 'EUR/USD';
+let currentAsset = 'EURUSD';
 let currentTimeframe = '5m';
 let allAssets = [];
 let currentFilter = 'all';
+let quotexConnected = false;
 
 /* ===== Initialization ===== */
 document.addEventListener('DOMContentLoaded', () => {
     initChart();
+    checkStatus();
     loadAssets();
     setupEventListeners();
     connectWebSocket();
     updateClock();
     setInterval(updateClock, 1000);
     setInterval(() => loadChart(currentAsset, currentTimeframe), 60000);
+    setInterval(checkStatus, 30000);
 });
+
+/* ===== Status Check ===== */
+async function checkStatus() {
+    try {
+        const res = await fetch(`${API_BASE}/api/status`);
+        const status = await res.json();
+        quotexConnected = status.quotex_connected;
+        const modeEl = document.getElementById('dataMode');
+        if (modeEl) {
+            modeEl.textContent = quotexConnected ? '🔴 QUOTEX LIVE' : '📊 yFinance';
+            modeEl.className = quotexConnected ? 'mode-badge mode-live' : 'mode-badge mode-fallback';
+        }
+    } catch(e) { /* ignore */ }
+}
 
 /* ===== TradingView Lightweight Chart ===== */
 function initChart() {
@@ -96,19 +113,20 @@ function populateAssetSelect(assets) {
         if (a.category !== currentCategory) {
             currentCategory = a.category;
             optgroup = document.createElement('optgroup');
-            optgroup.label = a.category + (a.category.includes('OTC') ? ' 🌙' : '');
+            const isOtcCat = a.category.includes('OTC');
+            optgroup.label = a.category + (isOtcCat ? ' 🌙' : '');
             select.appendChild(optgroup);
         }
         const opt = document.createElement('option');
-        opt.value = a.name;
-        opt.textContent = a.name;
-        if (a.name === currentAsset) opt.selected = true;
+        opt.value = a.symbol;
+        const payoutStr = a.payout > 0 ? ` (${a.payout}%)` : '';
+        opt.textContent = a.name + payoutStr;
+        if (a.symbol === currentAsset) opt.selected = true;
         optgroup.appendChild(opt);
     });
 
-    // If current asset not in filtered list, select first
-    if (filtered.length > 0 && !filtered.find(a => a.name === currentAsset)) {
-        currentAsset = filtered[0].name;
+    if (filtered.length > 0 && !filtered.find(a => a.symbol === currentAsset)) {
+        currentAsset = filtered[0].symbol;
         select.value = currentAsset;
         loadChart(currentAsset, currentTimeframe);
     }
@@ -121,18 +139,24 @@ function filterAssets(assets, filter) {
     return assets.filter(a => a.category === filter);
 }
 
+function getAssetInfo(symbol) {
+    return allAssets.find(a => a.symbol === symbol) || {};
+}
+
 /* ===== Chart Data ===== */
 async function loadChart(asset, timeframe) {
     currentAsset = asset;
     currentTimeframe = timeframe;
 
-    const isOtc = asset.includes('(OTC)');
+    const info = getAssetInfo(asset);
+    const displayName = info.name || asset;
+    const isOtc = info.is_otc || asset.includes('_otc');
+    const payout = info.payout || 0;
     const titleEl = document.getElementById('chartTitle');
-    if (isOtc) {
-        titleEl.innerHTML = `${asset} — ${timeframe} <span class="chart-otc-badge">OTC</span>`;
-    } else {
-        titleEl.textContent = `${asset} — ${timeframe}`;
-    }
+    let titleHtml = `${displayName} — ${timeframe}`;
+    if (isOtc) titleHtml += ` <span class="chart-otc-badge">OTC</span>`;
+    if (payout > 0) titleHtml += ` <span class="payout-badge">${payout}%</span>`;
+    titleEl.innerHTML = titleHtml;
 
     try {
         const res = await fetch(`${API_BASE}/api/chart/${encodeURIComponent(asset)}/${timeframe}`);
@@ -171,6 +195,7 @@ function updatePrice(price, isUp) {
 }
 
 function formatPrice(p) {
+    if (p >= 1000) return p.toFixed(2);
     if (p >= 100) return p.toFixed(2);
     if (p >= 1) return p.toFixed(4);
     return p.toFixed(6);
@@ -197,15 +222,21 @@ async function runAnalysis() {
 function renderAnalysis(data) {
     const panel = document.getElementById('signalContent');
     const sigKey = data.overall_signal.replace(/\s+/g, '_');
-    const isOtc = data.asset.includes('(OTC)');
+    const isOtc = (data.symbol || data.asset || '').includes('_otc') || (data.asset || '').includes('(OTC)');
+    const payout = data.payout || 0;
 
     let otcNote = '';
     if (isOtc) {
         otcNote = `
             <div style="background:rgba(171,71,188,0.1);border:1px solid rgba(171,71,188,0.3);border-radius:6px;padding:8px 12px;margin-bottom:12px;font-size:0.75rem;color:#ab47bc;">
-                🌙 <strong>OTC Market</strong> — Analysis based on base pair data. OTC prices may vary slightly from regular market.
+                🌙 <strong>OTC Market</strong> — Analysis based on real-time tick data from Quotex OTC engine.
             </div>
         `;
+    }
+
+    let payoutHtml = '';
+    if (payout > 0) {
+        payoutHtml = `<div style="font-size:0.8rem;color:var(--green);margin-top:4px;">Payout: <strong>${payout}%</strong></div>`;
     }
 
     let html = `
@@ -213,6 +244,7 @@ function renderAnalysis(data) {
         <div class="overall-signal signal-bg-${sigKey}">
             <div class="signal-type signal-color-${sigKey}">${data.overall_signal}</div>
             <div class="signal-strength">Signal Strength: ${data.signal_strength}%</div>
+            ${payoutHtml}
             <div class="recommendation">${data.recommendation}</div>
         </div>
         <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:12px;">
@@ -261,20 +293,19 @@ function renderScanner(results) {
         return;
     }
 
-    // Apply current filter to scanner results
     let filtered = results;
     if (currentFilter === 'otc') {
-        filtered = results.filter(r => r.asset.includes('(OTC)'));
+        filtered = results.filter(r => (r.symbol || r.asset || '').includes('_otc') || (r.asset || '').includes('(OTC)'));
     } else if (currentFilter === 'regular') {
-        filtered = results.filter(r => !r.asset.includes('(OTC)'));
+        filtered = results.filter(r => !(r.symbol || r.asset || '').includes('_otc') && !(r.asset || '').includes('(OTC)'));
     } else if (currentFilter !== 'all') {
         filtered = results.filter(r => {
-            const assetInfo = allAssets.find(a => a.name === r.asset);
-            return assetInfo && assetInfo.category === currentFilter;
+            const sym = r.symbol || '';
+            const info = getAssetInfo(sym);
+            return info.category === currentFilter;
         });
     }
 
-    // Sort: strongest signals first
     filtered.sort((a, b) => b.signal_strength - a.signal_strength);
 
     if (filtered.length === 0) {
@@ -286,12 +317,15 @@ function renderScanner(results) {
     filtered.forEach(r => {
         const sigKey = r.overall_signal.replace(/\s+/g, '_');
         const barColor = getSignalColor(sigKey);
-        const isOtc = r.asset.includes('(OTC)');
+        const sym = r.symbol || '';
+        const isOtc = sym.includes('_otc') || (r.asset || '').includes('(OTC)');
         const otcClass = isOtc ? 'otc-card' : '';
         const otcBadge = isOtc ? '<span class="otc-badge">OTC</span>' : '';
+        const payout = r.payout || 0;
+        const payoutStr = payout > 0 ? `<span class="payout-small">${payout}%</span>` : '';
         html += `
-            <div class="scanner-card ${otcClass}" onclick="selectAsset('${r.asset}')">
-                <div class="asset-name">${r.asset}${otcBadge}</div>
+            <div class="scanner-card ${otcClass}" onclick="selectAsset('${sym || r.asset}')">
+                <div class="asset-name">${r.asset}${otcBadge}${payoutStr}</div>
                 <div class="asset-price">${formatPrice(r.current_price)}</div>
                 <div class="asset-signal signal-color-${sigKey}">${r.overall_signal}</div>
                 <div class="asset-strength">
@@ -358,7 +392,10 @@ function connectWebSocket() {
 }
 
 function handleSignalsUpdate(signals) {
-    const match = signals.find(s => s.asset === currentAsset && s.timeframe === currentTimeframe);
+    const match = signals.find(s =>
+        (s.symbol === currentAsset || s.asset === currentAsset) &&
+        s.timeframe === currentTimeframe
+    );
     if (match) {
         renderAnalysis(match);
     }

@@ -55,6 +55,14 @@ body {
 .live-badge { background: rgba(239,83,80,0.15); color: var(--red); }
 .live-badge.connected { background: rgba(38,166,154,0.15); color: var(--green); }
 .clock { color: var(--text-secondary); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.mode-badge {
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.65rem;
+    font-weight: 600;
+}
+.mode-fallback { background: rgba(33,150,243,0.15); color: var(--accent); }
+.mode-live { background: rgba(239,83,80,0.15); color: var(--red); }
 
 /* ===== Market Tabs ===== */
 .market-tabs {
@@ -242,6 +250,22 @@ body {
     font-weight: 700;
     letter-spacing: 0.5px;
     margin-left: 8px;
+}
+.payout-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(38,166,154,0.2);
+    color: var(--green);
+    font-size: 0.7rem;
+    font-weight: 700;
+    margin-left: 8px;
+}
+.payout-small {
+    font-size: 0.65rem;
+    color: var(--green);
+    font-weight: 700;
+    margin-left: 4px;
 }
 
 /* ===== Bottom Section ===== */
