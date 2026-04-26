@@ -227,7 +227,51 @@ class QuotexBridge {
         }
     }
 
+    connectWithCookies() {
+        if (this.ws) this.disconnect();
+        this.sessionToken = null;
+        this._cookieMode = true;
+        this._setStatus('connecting', 'Connecting with login session...');
+
+        try {
+            this.ws = new WebSocket(QX_WS_URL);
+        } catch (e) {
+            this._setStatus('error', 'WebSocket creation failed');
+            return;
+        }
+
+        this.ws.onopen = () => { console.log('QX Bridge: WS opened (cookie mode)'); };
+        this.ws.onmessage = (event) => { this._handleMessage(event.data); };
+        this.ws.onclose = (event) => {
+            this.connected = false;
+            this.authenticated = false;
+            if (this.pingInterval) { clearInterval(this.pingInterval); this.pingInterval = null; }
+            if (this._cookieMode && !this._cookieAuthSuccess) {
+                this._setStatus('error', 'Cookie auth failed — token needed');
+                if (this.onNeedToken) this.onNeedToken();
+            } else {
+                this._setStatus('disconnected');
+            }
+            if (this.onDisconnect) this.onDisconnect();
+        };
+        this.ws.onerror = () => { this._setStatus('error', 'Connection failed'); };
+    }
+
     _sendAuth() {
+        if (this._cookieMode && !this.sessionToken) {
+            // In cookie mode, try auth with empty token first — server might use cookies
+            const authMsg = '42["authorization",{"session":"","isDemo":1,"tournamentId":0}]';
+            this._send(authMsg);
+            console.log('QX Bridge: Auth sent (cookie mode, no token)');
+            // Set timeout — if no s_authorization within 5s, need token
+            this._authTimeout = setTimeout(() => {
+                if (!this.authenticated) {
+                    console.log('QX Bridge: Cookie auth timeout, need token');
+                    if (this.onNeedToken) this.onNeedToken();
+                }
+            }, 5000);
+            return;
+        }
         if (!this.sessionToken) return;
         const authMsg = `42["authorization",{"session":"${this.sessionToken}","isDemo":1,"tournamentId":0}]`;
         this._send(authMsg);
@@ -237,6 +281,8 @@ class QuotexBridge {
     _handleEvent(event, data) {
         if (event === 's_authorization') {
             this.authenticated = true;
+            this._cookieAuthSuccess = true;
+            if (this._authTimeout) { clearTimeout(this._authTimeout); this._authTimeout = null; }
             this._setStatus('connected');
             console.log('QX Bridge: Authorized successfully');
             // Request tick stream
