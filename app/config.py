@@ -113,13 +113,36 @@ QUOTEX_INSTRUMENTS = {
     "PFE_otc": {"id": 297, "name": "Pfizer Inc (OTC)", "category": "stock", "decimals": 3, "payout": 77, "is_otc": True},
 }
 
-# Fallback yfinance symbols for when Quotex WS is not connected
+# yfinance symbols for chart data (OTC pairs use same base symbol)
 YF_SYMBOLS = {
+    # Forex
     "EURUSD": "EURUSD=X", "GBPUSD": "GBPUSD=X", "USDJPY": "JPY=X",
     "AUDUSD": "AUDUSD=X", "EURGBP": "EURGBP=X", "USDCAD": "CAD=X",
     "EURJPY": "EURJPY=X", "GBPJPY": "GBPJPY=X", "CHFJPY": "CHFJPY=X",
-    "USDCHF": "CHF=X", "AUDCAD": "AUDCAD=X", "BTCUSD_otc": "BTC-USD",
-    "ETHUSD_otc": "ETH-USD", "XAUUSD": "GC=F", "XAGUSD": "SI=F",
+    "USDCHF": "CHF=X", "AUDCAD": "AUDCAD=X", "AUDJPY": "AUDJPY=X",
+    "AUDCHF": "AUDCHF=X", "CADJPY": "CADJPY=X", "EURAUD": "EURAUD=X",
+    "EURCAD": "EURCAD=X", "EURCHF": "EURCHF=X", "GBPAUD": "GBPAUD=X",
+    "GBPCAD": "GBPCAD=X", "GBPCHF": "GBPCHF=X",
+    # Crypto
+    "BTCUSD_otc": "BTC-USD", "ETHUSD_otc": "ETH-USD",
+    "LTCUSD_otc": "LTC-USD", "BNBUSD_otc": "BNB-USD",
+    "BCHUSD_otc": "BCH-USD", "XRPUSD_otc": "XRP-USD",
+    "SOLUSD_otc": "SOL-USD", "AVAUSD_otc": "AVAX-USD",
+    "DOTUSD_otc": "DOT-USD", "LINUSD_otc": "LINK-USD",
+    "ATOUSD_otc": "ATOM-USD", "ETCUSD_otc": "ETC-USD",
+    "DASUSD_otc": "DASH-USD", "ZECUSD_otc": "ZEC-USD",
+    "TONUSD_otc": "TON11419-USD", "AXSUSD_otc": "AXS-USD",
+    # Commodity
+    "XAUUSD": "GC=F", "XAGUSD": "SI=F",
+    "UKBrent_otc": "BZ=F", "USCrude_otc": "CL=F",
+    # Stock indices
+    "AXJAUD": "^AXJO", "F40EUR": "^FCHI", "FTSGBP": "^FTSE",
+    "HSIHKD": "^HSI", "IBXEUR": "^IBEX", "JPXJPY": "^N225",
+    "STXEUR": "^STOXX50E",
+    # Stock OTC
+    "AXP_otc": "AXP", "BA_otc": "BA", "FB_otc": "META",
+    "INTC_otc": "INTC", "JNJ_otc": "JNJ", "MCD_otc": "MCD",
+    "MSFT_otc": "MSFT", "PFE_otc": "PFE",
 }
 
 TIMEFRAMES = {
