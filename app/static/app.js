@@ -1,6 +1,6 @@
 /* Quotex Signal Bot — Frontend Application */
 
-const API_BASE = '';
+const API_BASE = window.location.origin.replace(/\/\/[^@]+@/, '//');
 let chart, candleSeries, volumeSeries;
 let ws = null;
 let currentAsset = 'EURUSD';
@@ -358,7 +358,8 @@ function selectAsset(asset) {
 /* ===== WebSocket ===== */
 function connectWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    const cleanHost = window.location.host.replace(/^[^@]+@/, '');
+    const wsUrl = `${protocol}//${cleanHost}/ws`;
 
     ws = new WebSocket(wsUrl);
 
