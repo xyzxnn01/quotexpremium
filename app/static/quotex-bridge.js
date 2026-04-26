@@ -63,18 +63,23 @@ class QuotexBridge {
         this.ws.onclose = (event) => {
             console.log('QX Bridge: WebSocket closed', event.code, event.reason);
             this.connected = false;
+            const wasAuthed = this.authenticated;
             this.authenticated = false;
             if (this.pingInterval) {
                 clearInterval(this.pingInterval);
                 this.pingInterval = null;
             }
-            this._setStatus('disconnected');
+            if (!wasAuthed && this.sessionToken) {
+                this._setStatus('error', 'Auth rejected — check token');
+            } else {
+                this._setStatus('disconnected', 'Disconnected from Quotex');
+            }
             if (this.onDisconnect) this.onDisconnect();
         };
 
         this.ws.onerror = (error) => {
             console.error('QX Bridge: WebSocket error:', error);
-            this._setStatus('error', 'Connection failed');
+            this._setStatus('error', 'Connection failed — check network');
         };
     }
 
@@ -273,9 +278,9 @@ class QuotexBridge {
             return;
         }
         if (!this.sessionToken) return;
-        const authMsg = `42["authorization",{"session":"${this.sessionToken}","isDemo":1,"tournamentId":0}]`;
+        const authMsg = `42["authorization",{"session":"${this.sessionToken}","isDemo":0,"tournamentId":0}]`;
         this._send(authMsg);
-        console.log('QX Bridge: Authorization sent');
+        console.log('QX Bridge: Authorization sent (token len=' + this.sessionToken.length + ')');
     }
 
     _handleEvent(event, data) {

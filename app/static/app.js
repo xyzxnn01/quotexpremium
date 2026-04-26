@@ -576,8 +576,9 @@ async function quotexLogin() {
     }
 
     // Step 2: Build the console command that sends token back to our server
+    // Token is in window.settings.token on the Quotex trade room page
     const serverUrl = API_BASE || window.location.origin.replace(/\/\/[^@]+@/, '//');
-    const cmd = `fetch('${serverUrl}/api/set-token?connect_id=${_qxConnectId}&token='+encodeURIComponent(document.cookie.match(/session=([^;]+)/)?.[1]||localStorage.getItem('token')||''))`;
+    const cmd = `fetch('${serverUrl}/api/set-token?connect_id=${_qxConnectId}&token='+encodeURIComponent(window.settings?.token||''))`;
 
     // Step 3: Open Quotex login
     const popup = window.open(
@@ -616,7 +617,9 @@ function _showConnectHelper(cmd) {
     loginBtn.style.display = 'none';
 
     statusText.innerHTML =
-        '<span style="color:#ff9800;">Quotex-এ লগইন করুন</span>, তারপর Quotex ট্যাবে <b>F12</b> → <b>Console</b> → নিচের কোড পেস্ট করুন:';
+        '<span style="color:#ff9800;">① Quotex-এ লগইন করুন</span> → ' +
+        '<span style="color:#4fc3f7;">② Trade Room-এ যান</span> → ' +
+        '<b>F12</b> → <b>Console</b> → নিচের কোড পেস্ট করে Enter দিন:';
 
     let area = document.getElementById('qxTokenArea');
     if (area) area.remove();
@@ -701,6 +704,14 @@ function _startTokenPolling() {
 function _connectWithToken(token) {
     const bridge = window.qxBridge;
     if (!bridge) return;
+
+    if (!token || token === 'undefined' || token === 'null' || token.length < 10) {
+        document.getElementById('qxStatusText').innerHTML =
+            '<span style="color:#ef5350;">Token খালি বা ভুল!</span> ' +
+            'Quotex Trade Room-এ গিয়ে F12 → Console-এ কোড পেস্ট করুন।';
+        document.getElementById('qxDot').className = 'qx-dot error';
+        return;
+    }
 
     // Clean up UI
     const area = document.getElementById('qxTokenArea');
